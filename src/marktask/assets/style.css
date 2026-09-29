@@ -168,6 +168,9 @@ h3 { margin: 0 0 .8rem; font-size: 1rem; }
 .project-note-body li { margin: .2rem 0; }
 .project-note-body pre, .project-note-raw { overflow-x: auto; padding: .65rem; background: var(--sidebar); border-radius: .4rem; }
 .kanban-board { display: flex; align-items: flex-start; gap: 1rem; overflow-x: auto; padding: .3rem 0 1.2rem; }
+.board-paging { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; color: var(--muted); font-size: .82rem; }
+.board-paging button { padding: .4rem .7rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--raised); color: var(--text); font: inherit; cursor: pointer; }
+.board-paging button:hover, .board-paging button:focus-visible { border-color: var(--accent-text); color: var(--accent-text); }
 .kanban-column { flex: 0 0 260px; max-height: 72vh; overflow-y: auto; border: 1px solid var(--border); background: #202020; border-radius: .7rem; padding: .85rem; }
 .kanban-column.drop-target { border-color: var(--accent-text); background: var(--accent-wash); }
 .kanban-column h3 { display: flex; justify-content: space-between; align-items: center; margin: .2rem .25rem 1rem; }

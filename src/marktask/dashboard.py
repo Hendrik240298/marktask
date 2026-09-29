@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import replace
 from datetime import date
 import json
@@ -20,6 +21,7 @@ from marktask.writer import EditError, EditHandle, InvalidEdit, StaleSnapshot, T
 
 VIEWS = ("projects", "kanban", "inbox", "today", "overdue", "upcoming", "waiting", "all", "reference")
 BOARD_ORDER = ("Inbox", "Backlog", "To Do", "Next", "In Progress", "Waiting", "Review", "Done")
+BOARD_PAGE_SIZE = 12
 TABLE_COLUMNS = (("status", "Status"), ("task", "Task"), ("project", "Project"),
                  ("column", "Column"), ("due", "Due"), ("priority", "Priority"),
                  ("source", "Source · line"))
@@ -265,7 +267,8 @@ def edit_form() -> list:
 
 def kanban_board(tasks: list[Task], links: ObsidianLinks, allow_writes: bool = False,
                   lanes: tuple[str, ...] = (), sort_by: str = "due",
-                  all_tasks: tuple[Task, ...] = (), sources: tuple[str, ...] = ()) -> list:
+                  all_tasks: tuple[Task, ...] = (), sources: tuple[str, ...] = (),
+                  max_per_lane: int | None = BOARD_PAGE_SIZE) -> list:
     grouped: dict[str, list[Task]] = {name: [] for name in lanes}
     for task in tasks:
         if task.parent_line is not None:
@@ -281,18 +284,23 @@ def kanban_board(tasks: list[Task], links: ObsidianLinks, allow_writes: bool = F
         return (canonical if canonical is not None else len(BOARD_ORDER) - 1, column.casefold())
 
     columns = []
+    remaining = 0
+    child_counts = Counter((task.source, task.parent_line) for task in all_tasks
+                           if task.parent_line is not None)
     names = [*lanes, *(name for name in sorted(grouped, key=order) if name not in lanes)]
     for name in names:
         cards = []
         ordered = (sorted(grouped[name], key=lambda task: (-priority_rank(task), task.due or date.max,
-                                                          task.source, task.line))
+                                                           task.source, task.line))
                    if sort_by == "priority" else grouped[name])
-        for task in ordered:
+        visible = ordered[:max_per_lane] if max_per_lane is not None else ordered
+        remaining += len(ordered) - len(visible)
+        for task in visible:
             location = f"{task.source}:{task.line}"
             movable = (allow_writes and not task.completed and not task.cancelled
                        and (not task.is_board or task.board_source == task.source and not task.original[0].isspace()))
             targets = task.lanes if task.is_board else tuple(dict.fromkeys(("Backlog", *task.lanes)))
-            child_count = sum(child.source == task.source and child.parent_line == task.line for child in all_tasks)
+            child_count = child_counts[(task.source, task.line)]
             cards.append(html.Article([
                 html.Div(task_text(task, links, allow_writes, sources), className="card-text"),
                 html.Span(f"{child_count} subtask{'s' if child_count != 1 else ''}", className="subtask-count")
@@ -311,10 +319,18 @@ def kanban_board(tasks: list[Task], links: ObsidianLinks, allow_writes: bool = F
                **({"data-move-key": edit_key(task), "data-move-source": name,
                    "data-move-targets": json.dumps(targets)} if movable else {})))
         columns.append(html.Section([
-            html.H3([name, html.Span(str(len(cards)), className="column-count")]),
+            html.H3([name, html.Span(str(len(ordered)), className="column-count")]),
             *cards,
         ], className="kanban-column", **({"data-move-lane": name} if allow_writes else {})))
-    return [html.Div(columns, className="kanban-board")]
+    result = [html.Div(columns, className="kanban-board")]
+    if remaining:
+        result.append(html.Div([
+            html.Span(f"Showing the first {max_per_lane} cards per lane · {remaining} more available"),
+            html.Button(f"Show {BOARD_PAGE_SIZE} more per lane", id={"type": "board-page", "action": "more"},
+                        n_clicks=0),
+            html.Button("Show all cards", id={"type": "board-page", "action": "all"}, n_clicks=0),
+        ], className="board-paging"))
+    return result
 
 
 def table_sort_choice(value: dict | None) -> tuple[str, str]:
@@ -434,6 +450,7 @@ def create_app(projects_dir: Path, excludes: tuple[str, ...] = (), links: Obsidi
         dcc.Location(id="url", refresh=False),
         dcc.Store(id="edit-revision", data=0),
         dcc.Store(id="table-sort", data=DEFAULT_TABLE_SORT),
+        dcc.Store(id="board-limit"),
         *([dcc.Store(id="edit-selected"), dcc.Store(id="edit-proposal"),
            dcc.Store(id="move-request"), dcc.Store(id="move-proposal"),
            dcc.Store(id="move-revision", data=0), dcc.Store(id="lane-proposal"),
@@ -520,13 +537,13 @@ def create_app(projects_dir: Path, excludes: tuple[str, ...] = (), links: Obsidi
         Output("visibility-panel", "style"), Output("visibility-heading", "children"),
         Output("visibility-rules", "children"),
         Input("refresh", "n_clicks"), Input("url", "search"), Input("query", "value"),
-        Input("board-sort", "value"), Input("table-sort", "data"),
+        Input("board-sort", "value"), Input("table-sort", "data"), Input("board-limit", "data"),
         Input("edit-revision", "data"),
         *([Input("move-revision", "data"), Input("lane-revision", "data"),
            Input("visibility-revision", "data")] if allow_writes else []),
     )
     def render(_clicks: int, search: str | None, query: str | None, sort_by: str | None,
-               table_sort: dict | None, _revision: int, *_move_revision):
+               table_sort: dict | None, board_limit: dict | None, _revision: int, *_move_revision):
         try:
             index = scan(projects_dir, excludes)
         except ValueError:
@@ -557,10 +574,14 @@ def create_app(projects_dir: Path, excludes: tuple[str, ...] = (), links: Obsidi
             if project not in index.projects:
                 results = [html.H2("Project not found"), html.P("Choose a project from the sidebar.")]
             else:
+                limit = (board_limit.get("limit") if isinstance(board_limit, dict)
+                         and board_limit.get("project") == project
+                         and (board_limit.get("limit") is None or type(board_limit.get("limit")) is int
+                              and board_limit["limit"] >= BOARD_PAGE_SIZE) else BOARD_PAGE_SIZE)
                 results = [project_note_panel(projects_dir, project, links, index.sources),
-                           html.H2(f"{project} · {len(selected)} tasks"),
-                            *kanban_board(selected, links, allow_writes, index.lanes.get(project, ()),
-                                          sort_by or "due", active.tasks, index.sources)]
+                            html.H2(f"{project} · {len(selected)} tasks"),
+                             *kanban_board(selected, links, allow_writes, index.lanes.get(project, ()),
+                                           sort_by or "due", active.tasks, index.sources, limit)]
         elif view == "reference":
             results = [html.H2(f"Reference · {len(hidden)} files · {len(selected)} tasks"),
                        html.P("Hidden notes remain in their original files and can be opened in Obsidian.", className="hint"),
@@ -588,6 +609,20 @@ def create_app(projects_dir: Path, excludes: tuple[str, ...] = (), links: Obsidi
     @app.callback(Output("board-sort-control", "style"), Input("url", "search"))
     def show_board_sort(search: str | None):
         return {} if route(search)[0] == "kanban" else {"display": "none"}
+
+    @app.callback(Output("board-limit", "data"), Input({"type": "board-page", "action": ALL}, "n_clicks"),
+                  State("url", "search"), State("board-limit", "data"), prevent_initial_call=True)
+    def expand_board(_clicks, search, current):
+        triggered = ctx.triggered_id
+        view, project = route(search)
+        if (not isinstance(triggered, dict) or triggered.get("action") not in ("more", "all")
+                or not any(_clicks or []) or view != "kanban" or not project):
+            return no_update
+        previous = (current.get("limit") if isinstance(current, dict) and current.get("project") == project
+                    and type(current.get("limit")) is int and current["limit"] >= BOARD_PAGE_SIZE
+                    else BOARD_PAGE_SIZE)
+        return {"project": project, "limit": None if triggered["action"] == "all"
+                else previous + BOARD_PAGE_SIZE}
 
     @app.callback(Output("table-sort", "data"), Input({"type": "table-sort", "column": ALL}, "n_clicks"),
                   State("table-sort", "data"), prevent_initial_call=True)

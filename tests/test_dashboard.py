@@ -6,10 +6,11 @@ from marktask.dashboard import create_app, ordered_table_tasks, route
 from marktask.index import scan
 
 
-def render(app, search="", query=None, sort_by="due", table_sort=None):
+def render(app, search="", query=None, sort_by="due", table_sort=None, board_limit=None):
     output = next(key for key in app.callback_map if "results.children" in key)
     values = {"refresh.n_clicks": 0, "url.search": search, "query.value": query,
               "board-sort.value": sort_by, "table-sort.data": table_sort or {"column": "due", "direction": "asc"},
+              "board-limit.data": board_limit,
               "edit-revision.data": 0, "move-revision.data": 0, "lane-revision.data": 0,
               "visibility-revision.data": 0}
     response = app.server.test_client().post("/_dash-update-component", json={
@@ -118,6 +119,57 @@ def test_top_level_board_renders_six_lanes_with_ambiguous_master_notes(tmp_path:
     assert len(result[2]["props"]["children"]) == 6
     assert all(lane in str(result[2]["props"]["children"][number])
                for number, lane in enumerate(lanes))
+
+
+def test_large_board_pages_cards_without_hiding_counts_or_blocking_access(tmp_path: Path):
+    work = tmp_path / "Work"
+    work.mkdir()
+    (work / "_Kanban Work.md").write_text(
+        "---\nkanban-plugin: board\n---\n## Backlog\n"
+        + "".join(f"- [ ] Task {number:03d}\n" for number in range(199))
+        + "- [ ] Task 199 🔺\n", encoding="utf-8")
+    other = tmp_path / "Other"
+    other.mkdir()
+    (other / "_Kanban Other.md").write_text(
+        "---\nkanban-plugin: board\n---\n## Backlog\n"
+        + "".join(f"- [ ] Other {number}\n" for number in range(25)), encoding="utf-8")
+    app = create_app(tmp_path, allow_writes=True)
+    initial = render(app, "?view=kanban&project=Work")
+    board = initial["results"]["children"][2]
+    cards = board["props"]["children"][0]["props"]["children"]
+    assert len(cards) == 13  # Lane heading plus 12 cards.
+    assert "200" in str(cards[0]) and "Task 199" not in str(initial["results"])
+    assert "188 more available" in str(initial["results"])
+    assert "Task 199" in str(render(app, "?view=kanban&project=Work", sort_by="priority")["results"])
+    searched = str(render(app, "?view=kanban&project=Work", query="Task 190")["results"])
+    assert "Task 190" in searched and "Task 189" not in searched
+
+    key = next(name for name in app.callback_map if "board-limit.data" in name)
+
+    def expand(action, current):
+        identity = {"action": action, "type": "board-page"}
+        response = app.server.test_client().post("/_dash-update-component", json={
+            "output": key, "outputs": {"id": "board-limit", "property": "data"},
+            "inputs": [{"id": '{"action":["ALL"],"type":"board-page"}',
+                        "property": "n_clicks", "value": [1, 1]}],
+            "state": [{"id": "url", "property": "search", "value": "?view=kanban&project=Work"},
+                      {"id": "board-limit", "property": "data", "value": current}],
+            "changedPropIds": [json.dumps(identity, separators=(",", ":"), sort_keys=True) + ".n_clicks"],
+        })
+        assert response.status_code == 200, response.get_data(as_text=True)[:500]
+        return response.get_json()["response"]["board-limit"]["data"]
+
+    more = expand("more", None)
+    assert more == {"project": "Work", "limit": 24}
+    assert "Task 023" in str(render(app, "?view=kanban&project=Work", board_limit=more)["results"])
+    assert "Task 024" not in str(render(app, "?view=kanban&project=Work", board_limit=more)["results"])
+    full = expand("all", more)
+    assert full == {"project": "Work", "limit": None}
+    expanded = render(app, "?view=kanban&project=Work", board_limit=full)
+    assert "Task 199" in str(expanded["results"])
+    assert len(json.dumps(initial["results"])) < len(json.dumps(expanded["results"])) / 3
+    other_board = render(app, "?view=kanban&project=Other", board_limit=full)["results"]
+    assert "Other 11" in str(other_board) and "Other 12" not in str(other_board)
 
 
 def test_kanban_sort_toggle_changes_order_without_writing(tmp_path: Path):

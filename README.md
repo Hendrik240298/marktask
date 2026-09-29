@@ -88,6 +88,8 @@ The dashboard is the aggregation view; moving a task in an ordinary note does **
 
 On a project Kanban, **Order cards by** switches between Due date (the default) and Priority. Priority follows Obsidian Tasks' highest/high/medium/normal/low/lowest markers, highest first; ties use due date, then source location. This is display-only and does not reorder Markdown. Workspace tables default to due-date ordering, with their own column-header controls.
 
+For large projects, Kanban initially renders the first **12 cards per lane** (after the chosen sort). Each lane's badge still shows its full task count, and the board shows how many cards remain. Use **Show 12 more per lane** or **Show all cards** to display the rest. Search and other task views still include every task; this limit only reduces initial browser rendering and never changes Markdown. Switching projects starts at 12 cards per lane again.
+
 Workspace tables (Inbox, Today, Upcoming, Overdue, Waiting, All tasks and Reference) show **Priority** and have clickable headers for Status, Task, Project, Column, Due, Priority and Source. Click a header again to reverse its direction. Due date starts earliest first; Priority starts highest first when selected; undated tasks remain last even when reversing Due. Sorting happens before the 150-row display limit and changes only the current browser view, never Markdown. The selected order carries across workspace views until you reload the page; Kanban's separate sort switch is unaffected.
 
 ### Opening tasks in Obsidian
