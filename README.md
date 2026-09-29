@@ -4,11 +4,36 @@ A local task index and Dash dashboard over a user-selected directory of Markdown
 
 ## Install and run
 
-Requires Python 3.11+, [uv](https://docs.astral.sh/uv/) and Git. On another machine, clone the **public MarkTask code repository** (substitute its GitHub URL once published):
+Requires Python 3.11+ and Git. Clone the public **MarkTask code repository** (no GitHub login needed):
 
 ```sh
-git clone https://github.com/YOUR_ACCOUNT/marktask.git
+git clone https://github.com/Hendrik240298/marktask.git
 cd marktask
+```
+
+### Python venv (no uv required)
+
+On Linux/macOS:
+
+```sh
+python3 scripts/init_venv.py
+./.venv/bin/python -m marktask.cli scan --projects-dir /path/to/your/1-Projects
+./.venv/bin/python -m marktask.cli serve --projects-dir /path/to/your/1-Projects
+```
+
+On Windows (PowerShell):
+
+```powershell
+py -3 scripts\init_venv.py
+.\.venv\Scripts\python.exe -m marktask.cli scan --projects-dir 'C:\path\to\your\1-Projects'
+.\.venv\Scripts\python.exe -m marktask.cli serve --projects-dir 'C:\path\to\your\1-Projects'
+```
+
+The initializer creates or reuses an ignored `.venv/` and runs `pip install -e .` **from this checkout**, not `pip install marktask` from PyPI. Run it again after pulling code changes; pass `--dev` if you also want pytest. It requires access to the Python package index (or an approved local package mirror/cache) for Dash, PyYAML, Hatchling and their dependencies. You do not need to activate the environment.
+
+### With uv (optional)
+
+```sh
 uv sync
 uv run marktask scan --projects-dir /path/to/your/1-Projects
 uv run marktask serve --projects-dir /path/to/your/1-Projects
@@ -16,7 +41,7 @@ uv run marktask serve --projects-dir /path/to/your/1-Projects
 
 Open `http://127.0.0.1:8050`. Use `--port 8051` if needed. A public GitHub repository can be cloned without a GitHub login, but cloning and first-time dependency installation need network access. **No vault or example `1-Projects/` is included in the repository**: pass the direct path to a Projects directory on that machine. MarkTask never selects one automatically. The dashboard is read-only unless you explicitly pass `--allow-writes`.
 
-The name **MarkTask** here refers to this repository and its local `uv run marktask` command. An unrelated project already uses `marktask` on PyPI; do **not** use `pip install marktask` to install this application. Running `uv sync` inside the clone installs this checkout into its own environment instead.
+The name **MarkTask** here refers to this repository and its local command. An unrelated project already uses `marktask` on PyPI; do **not** use `pip install marktask` to install this application. Both setup methods install this checkout into its own environment instead.
 
 ### Guarded editing (optional)
 
@@ -25,6 +50,8 @@ The default commands above cannot edit tasks. Once you have an approved backup a
 ```sh
 uv run marktask serve --projects-dir /path/to/disposable/1-Projects --allow-writes
 ```
+
+Without uv, replace `uv run marktask` with `./.venv/bin/python -m marktask.cli` (or `.\.venv\Scripts\python.exe -m marktask.cli` on Windows) in any command below.
 
 Each task gets a **calendar icon** beside its due date. Pick a date to open a review dialog. **Click the task text** to edit its wording, supported metadata and lane in that dialog. Use **Review changes** once to see the exact before/after Markdown, then **Confirm change** or cancel. Editing fields together with a lane change is one guarded write to that task's file; a native board card and its child lines can move as part of that write. The source-location link beneath the card opens Obsidian.
 
@@ -93,6 +120,8 @@ The file and task rules live in `.marktask-visibility.json` at the selected Proj
 
 ```sh
 uv run --extra dev pytest
+# Or, after python3 scripts/init_venv.py --dev:
+./.venv/bin/python -m pytest
 ```
 
 The synthetic editing tests do not touch the bundled `1-Projects/` sample. That sample is ignored by Git and should not be committed without checking provenance and sensitivity. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the roadmap, [EDITING_PLAN.md](EDITING_PLAN.md) for write-safety limits and the pending real-vault trial, and [MANIFEST.md](MANIFEST.md) for the larger vision.
