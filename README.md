@@ -16,7 +16,8 @@ cd marktask
 On Linux/macOS:
 
 ```sh
-python3 scripts/init_venv.py
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
 ./.venv/bin/python -m marktask.cli scan --projects-dir /path/to/your/1-Projects
 ./.venv/bin/python -m marktask.cli serve --projects-dir /path/to/your/1-Projects
 ```
@@ -24,12 +25,13 @@ python3 scripts/init_venv.py
 On Windows (PowerShell):
 
 ```powershell
-py -3 scripts\init_venv.py
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m marktask.cli scan --projects-dir 'C:\path\to\your\1-Projects'
 .\.venv\Scripts\python.exe -m marktask.cli serve --projects-dir 'C:\path\to\your\1-Projects'
 ```
 
-The initializer creates or reuses an ignored `.venv/` and runs `pip install -e .` **from this checkout**, not `pip install marktask` from PyPI. Run it again after pulling code changes; pass `--dev` if you also want pytest. It requires access to the Python package index (or an approved local package mirror/cache) for Dash, PyYAML, Hatchling and their dependencies. You do not need to activate the environment.
+`requirements.txt` installs this checkout in editable mode; runtime dependencies (Dash and PyYAML) are declared once in `pyproject.toml`. Run the pip command again after pulling code changes. `.venv/` is Git-ignored, and you do not need to activate it. Pip needs access to a package index or an approved local mirror/cache to obtain dependencies and the build backend. If Windows has no `py` launcher, use `python` instead of `py -3` (with Python 3.11+).
 
 ### With uv (optional)
 
@@ -120,7 +122,12 @@ The file and task rules live in `.marktask-visibility.json` at the selected Proj
 
 ```sh
 uv run --extra dev pytest
-# Or, after python3 scripts/init_venv.py --dev:
+```
+
+With a standard venv, install test dependencies and run the tests:
+
+```sh
+./.venv/bin/python -m pip install -e '.[dev]'
 ./.venv/bin/python -m pytest
 ```
 
