@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from marktask.project_note import load_project_note, preview_markdown
@@ -118,6 +119,21 @@ def test_does_not_read_symlinked_note_or_folder_or_foreign_project(tmp_path: Pat
     (tmp_path / "Alias").symlink_to(folder, target_is_directory=True)
     assert load_project_note(tmp_path, "Alias").source is None
     assert load_project_note(tmp_path, "../Work").source is None
+
+
+def test_project_note_reads_without_posix_flags_or_dir_fd(tmp_path: Path, monkeypatch):
+    folder = tmp_path / "Work"
+    folder.mkdir()
+    note = folder / "_Work.md"
+    note.write_text("# Local context\n", encoding="utf-8")
+    with monkeypatch.context() as patch:
+        patch.delattr(os, "O_NOFOLLOW", raising=False)
+        patch.delattr(os, "O_DIRECTORY", raising=False)
+        assert load_project_note(tmp_path, "Work").body == "# Local context\n"
+        (tmp_path / "outside.md").write_text("Private", encoding="utf-8")
+        note.unlink()
+        note.symlink_to(tmp_path / "outside.md")
+        assert load_project_note(tmp_path, "Work").source is None
 
 
 def test_project_note_refreshes_on_next_render_and_not_in_overview(tmp_path: Path):

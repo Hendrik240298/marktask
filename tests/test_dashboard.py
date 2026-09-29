@@ -103,6 +103,23 @@ def test_empty_board_lanes_and_nested_project_master_note(tmp_path: Path):
     assert route("?view=inbox") == ("inbox", None)
 
 
+def test_top_level_board_renders_six_lanes_with_ambiguous_master_notes(tmp_path: Path):
+    folder = tmp_path / "Work"
+    folder.mkdir()
+    (folder / "_First.md").write_text("# First\n", encoding="utf-8")
+    (folder / "_Second.md").write_text("# Second\n", encoding="utf-8")
+    lanes = ("Inbox", "Backlog", "Next", "Doing", "Waiting", "Done")
+    (folder / "_Kanban Work.md").write_text(
+        "---\nkanban-plugin: board\n---\n" + "\n".join(f"## {lane}" for lane in lanes) + "\n",
+        encoding="utf-8")
+    app = create_app(tmp_path)
+    result = render(app, "?view=kanban&project=Work")["results"]["children"]
+    assert "Several _*.md notes" in str(result[0])
+    assert len(result[2]["props"]["children"]) == 6
+    assert all(lane in str(result[2]["props"]["children"][number])
+               for number, lane in enumerate(lanes))
+
+
 def test_kanban_sort_toggle_changes_order_without_writing(tmp_path: Path):
     folder = tmp_path / "Work"
     folder.mkdir()

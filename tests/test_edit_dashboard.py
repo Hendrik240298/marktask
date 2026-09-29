@@ -110,6 +110,8 @@ def test_clicking_title_edits_and_source_still_opens_obsidian(tmp_path: Path):
     button = task_text(task, links, True)
     assert button.id["type"] == "edit-task"
     assert button.children == task.text
+    assert button.to_plotly_json()["type"] == "Button"
+    assert "href" not in button.to_plotly_json()["props"]
     for view in (str(kanban_board([task], links, True)), str(task_table([task], links, True))):
         assert "task-edit-trigger" in view and "quick-due" in view
         assert "obsidian://open?path=" in view

@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import quote
@@ -120,6 +121,24 @@ def test_visibility_config_rejects_symlinks_and_parent_path_globs(tmp_path: Path
         load_rules(link)
     with pytest.raises(VisibilityError, match="relative path glob"):
         validate_pattern("../secrets/*")
+
+
+def test_visibility_rules_work_without_posix_open_flags_or_fchmod(tmp_path: Path, monkeypatch):
+    config = tmp_path / "rules.json"
+    config.write_text('{"reference_globs": ["templates"]}', encoding="utf-8")
+    link = tmp_path / "linked.json"
+    link.symlink_to(config)
+    with monkeypatch.context() as patch:
+        patch.delattr(os, "O_NOFOLLOW", raising=False)
+        patch.delattr(os, "O_NONBLOCK", raising=False)
+        patch.delattr(os, "fchmod", raising=False)
+        assert load_rules(tmp_path / "missing.json")[1] == "missing"
+        assert load_rules(config)[0].reference_globs == ("templates",)
+        with pytest.raises(VisibilityError, match="non-symlink"):
+            load_rules(link)
+        _, digest = load_rules(config)
+        save_rules(config, VisibilityRules(reference_globs=("archive",)), digest)
+        assert load_rules(config)[0].reference_globs == ("archive",)
 
 
 def test_gui_task_rules_hide_selected_tasks_without_hiding_their_note(tmp_path: Path):

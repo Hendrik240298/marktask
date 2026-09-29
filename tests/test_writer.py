@@ -37,6 +37,27 @@ def test_preview_is_read_only_and_toggle_preserves_every_other_byte(tmp_path: Pa
     assert note.read_bytes() == original
 
 
+def test_guarded_edit_preserves_mode_without_fchmod(tmp_path: Path, monkeypatch):
+    note = tmp_path / "tasks.md"
+    note.write_text("- [ ] Task\n", encoding="utf-8")
+    note.chmod(0o640)
+    selected = handle(tmp_path, "tasks.md")
+    original_chmod = os.chmod
+    changed = []
+
+    def chmod(path, mode):
+        changed.append((Path(path), mode))
+        original_chmod(path, mode)
+
+    with monkeypatch.context() as patch:
+        patch.delattr(os, "fchmod", raising=False)
+        patch.setattr(os, "chmod", chmod)
+        TaskWriter(tmp_path).apply(selected, "toggle")
+    assert len(changed) == 1 and changed[0][1] == 0o640
+    assert note.read_text(encoding="utf-8") == "- [x] Task\n"
+    assert stat.S_IMODE(note.stat().st_mode) == 0o640
+
+
 def test_identical_task_lines_remain_distinct_by_line_number(tmp_path: Path):
     note = tmp_path / "tasks.md"
     note.write_text("- [ ] Same\n- [ ] Same\n", encoding="utf-8")

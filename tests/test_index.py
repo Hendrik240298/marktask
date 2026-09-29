@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+import marktask.index as index_module
 from marktask.index import ROOT_PROJECT, parse_markdown, scan, task_column, visible_tasks
 
 
@@ -147,6 +148,51 @@ def test_nested_master_creates_project_and_orphan_board_is_not_parent_board(tmp_
     }
     assert task_column(next(task for task in index.tasks if task.text == "Orphan item")) == "Backlog"
     assert any("not paired" in issue.message for issue in index.warnings)
+
+
+def test_scan_parses_portable_source_names_without_host_path_semantics(tmp_path: Path, monkeypatch):
+    nested = tmp_path / "Parent" / "Child"
+    nested.mkdir(parents=True)
+    (nested / "_Child.md").write_text("# Child\n", encoding="utf-8")
+    (nested / "_Kanban Child.md").write_text(
+        "---\nkanban-plugin: board\n---\n## Waiting\n- [ ] Nested task\n", encoding="utf-8")
+    host_path = index_module.Path
+
+    def filesystem_path(value):
+        if isinstance(value, str) and "/" in value and not value.startswith("/"):
+            raise AssertionError("Indexed POSIX source paths must not use the host Path parser")
+        return host_path(value)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(index_module, "Path", filesystem_path)
+        result = scan(tmp_path)
+    assert result.boards == {"Parent/Child": "Parent/Child/_Kanban Child.md"}
+    assert result.lanes["Parent/Child"] == ("Waiting",)
+    assert task_column(next(t for t in result.tasks if t.text == "Nested task")) == "Waiting"
+
+
+def test_top_level_board_has_lanes_despite_ambiguous_master_but_nested_board_does_not(tmp_path: Path):
+    work = tmp_path / "Work"
+    child = work / "Child"
+    child.mkdir(parents=True)
+    (work / "_First.md").write_text("# First\n", encoding="utf-8")
+    (work / "_Second.md").write_text("# Second\n", encoding="utf-8")
+    board = work / "_Kanban Work.md"
+    board.write_text("---\nkanban-plugin: board\n---\n" + "".join(
+        f"## {lane}\n" + ("- [ ] Top-level task\n" if lane == "Doing" else "")
+        for lane in ("Inbox", "Backlog", "Doing", "Waiting", "Review", "Done")), encoding="utf-8")
+    (child / "_First.md").write_text("# First\n", encoding="utf-8")
+    (child / "_Second.md").write_text("# Second\n", encoding="utf-8")
+    (child / "_Kanban Child.md").write_text(
+        "---\nkanban-plugin: board\n---\n## Custom\n- [ ] Not a separate project\n", encoding="utf-8")
+
+    index = scan(tmp_path)
+    assert index.projects == ("Work",)
+    assert index.boards == {"Work": "Work/_Kanban Work.md"}
+    assert index.lanes["Work"] == ("Inbox", "Backlog", "Doing", "Waiting", "Review", "Done")
+    assert task_column(next(t for t in index.tasks if t.text == "Top-level task")) == "Doing"
+    assert task_column(next(t for t in index.tasks if t.text == "Not a separate project")) == "Backlog"
+    assert any("not paired" in warning.message for warning in index.warnings)
 
 
 def test_only_matching_todo_lanes_count_and_bare_todo_is_backlog(tmp_path: Path):

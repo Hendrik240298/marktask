@@ -697,10 +697,13 @@ class TaskWriter:
         try:
             fd, temp_path = tempfile.mkstemp(prefix=".marktask-", suffix=".tmp", dir=path.parent)
             with os.fdopen(fd, "wb") as temporary:
-                os.fchmod(temporary.fileno(), prepared.mode)
+                if hasattr(os, "fchmod"):
+                    os.fchmod(temporary.fileno(), prepared.mode)
                 temporary.write(prepared.updated_bytes)
                 temporary.flush()
                 os.fsync(temporary.fileno())
+            if not hasattr(os, "fchmod"):
+                os.chmod(temp_path, prepared.mode)
             self._path(handle)  # Refuse a parent/leaf that became a symlink while preparing.
             current, info = self._read(path)
             if (current != prepared.original_bytes or info.st_dev != prepared.device

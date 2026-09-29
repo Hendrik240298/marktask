@@ -144,18 +144,31 @@ def load_project_note(projects_dir: Path, project: str) -> ProjectNote:
 
     source = path.relative_to(projects_dir).as_posix()
     try:
-        folder_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        descriptor_read = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                           and os.open in getattr(os, "supports_dir_fd", ()))
+        folder_fd = None
         try:
-            file_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=folder_fd)
+            if descriptor_read:
+                folder_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                file_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=folder_fd)
+            else:
+                before = path.lstat()
+                if folder.is_symlink() or not stat.S_ISREG(before.st_mode):
+                    return ProjectNote(source, message="Master note is not a regular file.")
+                file_fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             with os.fdopen(file_fd, "rb") as file:
                 info = os.fstat(file.fileno())
                 if not stat.S_ISREG(info.st_mode):
                     return ProjectNote(source, message="Master note is not a regular file.")
+                if not descriptor_read and (folder.is_symlink() or not os.path.samestat(info, before)
+                                            or not os.path.samestat(info, path.lstat())):
+                    return ProjectNote(source, message="Master note changed while opening it.")
                 if info.st_size > MAX_NOTE_BYTES:
                     return ProjectNote(source, message="Master note is too large for an inline preview; open it in Obsidian.")
                 data = file.read(MAX_NOTE_BYTES + 1)
         finally:
-            os.close(folder_fd)
+            if folder_fd is not None:
+                os.close(folder_fd)
         if len(data) > MAX_NOTE_BYTES:
             return ProjectNote(source, message="Master note is too large for an inline preview; open it in Obsidian.")
         text = data.decode("utf-8-sig")

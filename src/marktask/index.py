@@ -7,7 +7,7 @@ import re
 import hashlib
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 TASK = re.compile(r"^\s*[-*+]\s+\[([ xX-])\]\s*(.*)$")
@@ -251,10 +251,11 @@ def scan(projects_dir: Path, excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> In
     # A nested folder with its own master note is a project, not part of the parent project.
     masters: set[str] = set()
     for folder in folders:
-        candidates = [Path(source).name for source, _content, _data in documents
-                      if str(Path(source).parent) == folder and Path(source).name.startswith("_")
-                      and not Path(source).name.casefold().startswith("_kanban")]
-        if f"_{Path(folder).name}.md" in candidates or len(candidates) == 1:
+        candidates = [PurePosixPath(source).name for source, _content, _data in documents
+                      if PurePosixPath(source).parent.as_posix() == folder
+                      and PurePosixPath(source).name.startswith("_")
+                      and not PurePosixPath(source).name.casefold().startswith("_kanban")]
+        if f"_{PurePosixPath(folder).name}.md" in candidates or len(candidates) == 1:
             masters.add(folder)
         if "/" in folder and folder in masters:
             projects.add(folder)
@@ -262,10 +263,11 @@ def scan(projects_dir: Path, excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> In
     boards: dict[str, str] = {}
     lanes: dict[str, tuple[str, ...]] = {}
     for project in sorted(projects):
-        if project not in masters:
+        if "/" in project and project not in masters:
             continue
         candidates = [(source, columns) for source, content, _ in documents
-                      if str(Path(source).parent) == project and Path(source).name.casefold().startswith("_kanban")
+                      if PurePosixPath(source).parent.as_posix() == project
+                      and PurePosixPath(source).name.casefold().startswith("_kanban")
                       if (columns := board_columns(content)) is not None]
         if len(candidates) > 1:
             warnings.append(Warning(project, None, "multiple project Kanban boards; lanes are ambiguous"))
@@ -280,7 +282,7 @@ def scan(projects_dir: Path, excludes: tuple[str, ...] = DEFAULT_EXCLUDES) -> In
             lanes[project] = columns
 
     for source, content, data in documents:
-        folder = Path(source).parent
+        folder = PurePosixPath(source).parent
         parents = (folder.as_posix(), *(p.as_posix() for p in folder.parents))
         project = next((name for name in parents if name in projects), ROOT_PROJECT)
         parsed, issues = parse_markdown(content, source, project, hashlib.sha256(data).hexdigest())

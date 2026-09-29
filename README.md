@@ -55,6 +55,14 @@ uv run marktask serve --projects-dir /path/to/disposable/1-Projects --allow-writ
 
 Without uv, replace `uv run marktask` with `./.venv/bin/python -m marktask.cli` (or `.\.venv\Scripts\python.exe -m marktask.cli` on Windows) in any command below.
 
+On Windows, start a **new server process** with editing enabled if you want the task-text button to open the MarkTask editor:
+
+```powershell
+.\.venv\Scripts\python.exe -m marktask.cli serve --projects-dir 'C:\path\to\your\1-Projects' --allow-writes
+```
+
+If clicking task text opens Obsidian in a normal task view, the server is running in read-only mode; `--allow-writes` is a startup option, not a dashboard toggle. The `file.md:line` **source link** always opens Obsidian, including when editing is enabled. Tasks in **Reference** also open Obsidian instead of the editor. Keep writes disabled on a real vault until you have a backup and have tested on disposable notes.
+
 Each task gets a **calendar icon** beside its due date. Pick a date to open a review dialog. **Click the task text** to edit its wording, supported metadata and lane in that dialog. Use **Review changes** once to see the exact before/after Markdown, then **Confirm change** or cancel. Editing fields together with a lane change is one guarded write to that task's file; a native board card and its child lines can move as part of that write. The source-location link beneath the card opens Obsidian.
 
 Supported fields: task text and space-separated tags; standard To do `[ ]`, Done `[x]`, and Cancelled `[-]` status; priority; due, scheduled, start, created, done and cancelled dates; a restricted set of recurrence rules (`every day`, `every weekday`, `every week`, `every month`, `every year`, or `every N days/weeks/months/years`, optionally `when done`); and **Depends on** as comma-separated IDs of existing, uniquely identified tasks in the selected Projects directory. The Tasks plugin's *Before this* picker, automatic task-ID assignment, custom statuses, arbitrary recurrence rules and *Only future dates* display preference are not reproduced. Recurrence rules may be edited, but recurring tasks cannot be completed or cancelled here until next-occurrence generation is implemented. Creating new tasks is not available. For ambiguous syntax or changes spanning tasks/files, edit in Obsidian instead.

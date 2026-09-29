@@ -134,16 +134,25 @@ def _parse_rules(value: object) -> VisibilityRules:
 
 def load_rules(path: Path) -> tuple[VisibilityRules, str]:
     """Return rules and an exact snapshot of the config (including a missing file)."""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        if not nofollow:
+            before = path.lstat()
+            if not stat.S_ISREG(before.st_mode):
+                raise VisibilityError("Visibility file must be a readable, regular (non-symlink) file")
+        fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0))
     except FileNotFoundError:
         return VisibilityRules(), "missing"
     except OSError as exc:
         raise VisibilityError("Visibility file must be a readable, regular (non-symlink) file") from exc
     try:
         with os.fdopen(fd, "rb") as file:
-            if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+            info = os.fstat(file.fileno())
+            if not stat.S_ISREG(info.st_mode):
                 raise VisibilityError("Visibility file must be a regular file")
+            if not nofollow and (not os.path.samestat(info, before)
+                                 or not os.path.samestat(info, path.lstat())):
+                raise VisibilityError("Visibility file changed while opening it")
             data = file.read(16_385)
         if len(data) > 16_384:
             raise VisibilityError("Visibility file must be a small JSON file")
@@ -170,10 +179,13 @@ def save_rules(path: Path, patterns: VisibilityRules, digest: str) -> None:
     try:
         with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".marktask-", delete=False) as file:
             temporary = Path(file.name)
-            os.fchmod(file.fileno(), 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(file.fileno(), 0o600)
             file.write(data)
             file.flush()
             os.fsync(file.fileno())
+        if not hasattr(os, "fchmod"):
+            os.chmod(temporary, 0o600)
         if load_rules(path)[1] != digest:
             raise VisibilityError("Visibility rules changed; review again")
         os.replace(temporary, path)
