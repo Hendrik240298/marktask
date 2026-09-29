@@ -1,0 +1,4 @@
+1-Projects/
+.venv/
+__pycache__/
+.pytest_cache/
